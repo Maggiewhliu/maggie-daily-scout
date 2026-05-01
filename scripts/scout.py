@@ -103,11 +103,15 @@ def call_claude(prompt, max_tokens=2500):
     result = http_request(
         "https://api.anthropic.com/v1/messages",
         headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-        data={"model": "claude-opus-4-5", "max_tokens": max_tokens,
+        data={"model": "claude-opus-4-7", "max_tokens": max_tokens,
               "messages": [{"role": "user", "content": prompt}]},
         method="POST",
     )
     if not result:
+        print("⚠️  call_claude returned None — check ANTHROPIC_API_KEY and model name")
+        return None
+    if "content" not in result or not result["content"]:
+        print(f"⚠️  Unexpected response: {str(result)[:500]}")
         return None
     return result["content"][0]["text"]
 
@@ -467,25 +471,35 @@ def write_to_notion(opp, personal, threads, substack, medium, repos, skills, cas
 
 def main():
     print(f"🚀 Chris v3 — {TODAY} 週{WEEKDAY_TW}")
+    print(f"🔑 NOTION_TOKEN 長度: {len(NOTION_TOKEN)}, ANTHROPIC_API_KEY 長度: {len(ANTHROPIC_API_KEY)}")
+    
     repos = fetch_github_trending()
+    print(f"📊 抓到 GitHub Trending: {len(repos)} 個")
     skills = fetch_anthropic_skills()
+    print(f"🛠️  抓到 Skills: {len(skills)} 個")
     cases = fetch_automation_cases()
+    print(f"⚡ 抓到自動化案例: {len(cases)} 個")
     
     if not repos and not skills and not cases:
-        print("⚠️  今天沒爬到東西"); return
+        print("⚠️  今天沒爬到東西，但仍會寫一條紀錄到 Notion")
+        repos, skills, cases = [], [], []
     
-    opp = analyze_opportunities(repos, skills, cases)
-    personal = generate_personal_notes(repos, cases, opp)
-    threads = generate_threads_post(opp)
-    substack = generate_substack_post(opp, personal)
-    medium = generate_medium_post(opp, personal)
+    opp = analyze_opportunities(repos, skills, cases) or "（商機分析失敗）"
+    personal = generate_personal_notes(repos, cases, opp) or "（個人筆記失敗）"
+    threads = generate_threads_post(opp) or "（Threads 文案生成失敗）"
+    substack = generate_substack_post(opp, personal) or "（Substack 文案生成失敗）"
+    medium = generate_medium_post(opp, personal) or "（Medium failed）"
     
     print(f"\n📱 Threads ({len(threads)} 字元)")
     print(f"📝 Substack ({len(substack)} 字)")
     print(f"📰 Medium ({len(medium.split())} words)\n")
     
-    write_to_notion(opp, personal, threads, substack, medium, repos, skills, cases)
-    print("🎉 完成")
+    success = write_to_notion(opp, personal, threads, substack, medium, repos, skills, cases)
+    if success:
+        print("🎉 完成")
+    else:
+        print("❌ Notion 寫入失敗")
+        exit(1)
 
 
 if __name__ == "__main__":
